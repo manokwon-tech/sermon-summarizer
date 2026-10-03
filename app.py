@@ -128,30 +128,37 @@ def summarize_sermon_gemini(transcript_text, api_key):
 3. 💡 **상세 설교 대지** (서론, 본론, 결론 구분 및 예화/인물/핵심 메시지 포함)
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
-    # 사용 가능한 모델 목록에서 'flash' 모델 자동 탐색
-    selected_model = None
+    # 1. 내 API 키로 접근 가능한 실제 모델 목록 전체 조회
+    valid_models = []
     try:
-        models_list = list(client.models.list())
-        for m in models_list:
-            if 'flash' in m.name.lower():
-                selected_model = m.name
-                break
-    except Exception:
-        pass
-
-    # 목록 조회 실패 시 하드코딩된 기본 풀네임 사용
-    if not selected_model:
-        selected_model = "models/gemini-1.5-flash"
-
-    try:
-        response = client.models.generate_content(
-            model=selected_model,
-            contents=prompt,
-        )
-        return response.text
+        for m in client.models.list():
+            # generateContent를 지원하는 모델만 수집
+            if hasattr(m, 'supported_generation_methods') and 'generateContent' in m.supported_generation_methods:
+                valid_models.append(m.name)
+            elif not hasattr(m, 'supported_generation_methods'):
+                valid_models.append(m.name)
     except Exception as e:
-        st.error(f"Gemini API 호출 중 오류 발생 ({selected_model}): {str(e)}")
+        st.error(f"모델 목록 조회 실패: {str(e)}")
+
+    if not valid_models:
+        st.error("현재 API 키로 이용 가능한 Gemini 모델을 찾을 수 없습니다. API 키 권한을 확인해 주세요.")
         return None
+
+    # 2. 조회된 모델들 중 차례대로 호출 시도
+    last_exception = None
+    for model_name in valid_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            last_exception = e
+            continue
+
+    st.error(f"모든 모델 호출 실패 (조회된 모델: {valid_models}): {str(last_exception)}")
+    return None
 
 # Streamlit UI 구성
 raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
