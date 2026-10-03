@@ -20,10 +20,13 @@ def download_and_cut_video(url, start_time, end_time, output_filename="cut_resul
     if os.path.exists(output_filename):
         os.remove(output_filename)
     
+    # ffmpeg를 이용해 안정적으로 오디오 구획을 자르는 yt-dlp 옵션
     command = [
         "yt-dlp",
         "--download-sections", f"*{start_time}-{end_time}",
-        "-f", "ba/b",
+        "-f", "bestaudio/best",
+        "--extract-audio",
+        "--audio-format", "mp3",
         "-o", output_filename,
         "--force-overwrites",
         url
