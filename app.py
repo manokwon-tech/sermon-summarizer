@@ -128,17 +128,23 @@ def summarize_sermon_gemini(transcript_text, api_key):
 3. 💡 **상세 설교 대지** (서론, 본론, 결론 구분 및 예화/인물/핵심 메시지 포함)
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
-    try:
-        # 모델명을 gemini-1.5-flash (또나 gemini-3.8-flash) 로 수정
-        response = client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=prompt,
-        )
-        return response.text
-    except Exception as e:
-        st.error(f"Gemini API 호출 중 오류 발생: {str(e)}")
-        return None
-
+    # 우선 순위 모델 목록
+    candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'models/gemini-1.5-flash']
+    
+    last_exception = None
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            last_exception = e
+            continue
+            
+    st.error(f"Gemini API 호출 중 오류 발생: {str(last_exception)}")
+    return None
 
 # Streamlit UI 구성
 raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
