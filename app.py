@@ -129,15 +129,16 @@ def summarize_sermon_gemini(transcript_text, api_key):
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
     try:
-        # 최신 권장 모델인 gemini-2.0-flash 사용
+        # 모델명을 gemini-1.5-flash (또나 gemini-3.8-flash) 로 수정
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-flash',
             contents=prompt,
         )
         return response.text
     except Exception as e:
         st.error(f"Gemini API 호출 중 오류 발생: {str(e)}")
         return None
+
 
 # Streamlit UI 구성
 raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
