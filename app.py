@@ -16,17 +16,15 @@ st.write("유튜브 설교 영상 링크를 입력하시면 대본 추출 후 �
 # Streamlit Secrets에서 Gemini API 키 가져오기
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-def download_and_cut_video(url, start_time, end_time, output_filename="cut_result.mp4"):
+def download_and_cut_video(url, start_time, end_time, output_filename="cut_result.m4a"):
     if os.path.exists(output_filename):
         os.remove(output_filename)
     
-    # ffmpeg를 이용해 안정적으로 오디오 구획을 자르는 yt-dlp 옵션
+    # Streamlit Cloud에서 가장 실패율이 낮은 yt-dlp 경량화 옵션
     command = [
         "yt-dlp",
         "--download-sections", f"*{start_time}-{end_time}",
-        "-f", "bestaudio/best",
-        "--extract-audio",
-        "--audio-format", "mp3",
+        "-f", "ba[ext=m4a]/ba/b",
         "-o", output_filename,
         "--force-overwrites",
         url
