@@ -1,4 +1,4 @@
 streamlit
+google-genai
 openai-whisper
 yt-dlp
-google-genai

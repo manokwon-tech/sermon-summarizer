@@ -1,9 +1,8 @@
 import os
-import subprocess
 import ssl
-import sys
-import whisper
 import streamlit as st
+import whisper
+import yt_dlp
 from google import genai
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -16,21 +15,42 @@ st.write("유튜브 설교 영상 링크를 입력하시면 대본 추출 후 �
 # Streamlit Secrets에서 Gemini API 키 가져오기
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-def download_and_cut_video(url, start_time, end_time, output_filename="cut_result.m4a"):
-    if os.path.exists(output_filename):
-        os.remove(output_filename)
+def download_and_cut_video(url, start_time, end_time, output_filename="cut_result"):
+    # 파일 확장자 관리
+    output_mp3 = f"{output_filename}.mp3"
+    if os.path.exists(output_mp3):
+        os.remove(output_mp3)
     
-    # Streamlit Cloud에서 가장 실패율이 낮은 yt-dlp 경량화 옵션
-    command = [
-        "yt-dlp",
-        "--download-sections", f"*{start_time}-{end_time}",
-        "-f", "ba[ext=m4a]/ba/b",
-        "-o", output_filename,
-        "--force-overwrites",
-        url
-    ]
-    subprocess.run(command, check=True)
-    return output_filename
+    # 시간(hh:mm:ss 또는 mm:ss)을 초 단위(float)로 변환하는 함수
+    def time_to_seconds(t_str):
+        parts = list(map(int, t_str.split(':')))
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        elif len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        return int(t_str)
+
+    start_sec = time_to_seconds(start_time)
+    end_sec = time_to_seconds(end_time)
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_filename,
+        'download_ranges': yt_dlp.utils.download_range_func(None, [(start_sec, end_sec)]),
+        'force_overwrites': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': True,
+        'nocheckcertificate': True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+
+    return output_mp3
 
 def transcribe_audio(filename):
     model = whisper.load_model("base")
@@ -104,7 +124,7 @@ if st.button("🚀 처리 시작하기"):
     if not GEMINI_API_KEY:
         st.error("Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
     else:
-        with st.spinner("1단계: 영상 다운로드 중..."):
+        with st.spinner("1단계: 영상 오디오 추출 중..."):
             audio_file = download_and_cut_video(video_url, start_time, end_time)
         
         with st.spinner("2단계: Whisper로 대본 추출 중..."):
