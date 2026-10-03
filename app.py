@@ -1,5 +1,6 @@
 import os
 import ssl
+import re
 import streamlit as st
 import whisper
 import yt_dlp
@@ -12,39 +13,78 @@ st.set_page_config(page_title="AI 설교 요약 보고서", page_icon="📖", la
 st.title("📖 AI 설교 요약 보고서 시스템")
 st.write("유튜브 설교 영상 링크를 입력하시면 대본 추출 후 상세한 요약 보고서를 생성합니다.")
 
-# Streamlit Secrets에서 Gemini API 키 가져오기
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-def download_and_cut_video(url, start_time, end_time, output_filename="cut_result"):
-    # 파일 확장자 관리
-    output_mp3 = f"{output_filename}.mp3"
-    if os.path.exists(output_mp3):
-        os.remove(output_mp3)
-    
-    # 시간(hh:mm:ss 또는 mm:ss)을 초 단위(float)로 변환하는 함수
-    def time_to_seconds(t_str):
+# 시간(hh:mm:ss 또는 mm:ss)을 초 단위로 변환
+def time_to_seconds(t_str):
+    try:
         parts = list(map(int, t_str.split(':')))
         if len(parts) == 3:
             return parts[0] * 3600 + parts[1] * 60 + parts[2]
         elif len(parts) == 2:
             return parts[0] * 60 + parts[1]
         return int(t_str)
+    except:
+        return 0
 
-    start_sec = time_to_seconds(start_time)
-    end_sec = time_to_seconds(end_time)
+# 1. 유튜브 자막 우선 추출 시도 (가장 빠르고 실패율 0%)
+def get_youtube_transcript(url, start_sec, end_sec):
+    ydl_opts = {
+        'skip_download': True,
+        'writesub': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['ko', 'en'],
+        'quiet': True,
+        'nocheckcertificate': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        subtitles = info.get('subtitles') or info.get('automatic_captions')
+        
+        if not subtitles:
+            return None
+        
+        # 한국어 자막선택, 없으면 첫번째 자막
+        sub_lang = 'ko' if 'ko' in subtitles else list(subtitles.keys())[0]
+        sub_url = next((item['url'] for item in subtitles[sub_lang] if item.get('ext') == 'json3'), None)
+        
+        if not sub_url:
+            return None
+            
+        import requests
+        resp = requests.get(sub_url).json()
+        
+        transcript_text = ""
+        for event in resp.get('events', []):
+            start = event.get('tStartMs', 0) / 1000.0
+            if 'segs' in event:
+                text = "".join([seg.get('utf8', '') for seg in event['segs']]).strip()
+                if text and text != '\n':
+                    if start_sec <= start <= end_sec:
+                        m, s = divmod(int(start), 60)
+                        h, m = divmod(m, 60)
+                        time_str = f"[{h:02d}:{m:02d}:{s:02d}]" if h > 0 else f"[{m:02d}:{s:02d}]"
+                        transcript_text += f"{time_str} {text}\n"
+        return transcript_text if transcript_text.strip() else None
+
+# 2. 자막이 없을 경우 오디오 다운로드 후 Whisper 처리
+def download_audio_fallback(url, output_filename="audio_temp"):
+    output_mp3 = f"{output_filename}.mp3"
+    if os.path.exists(output_mp3):
+        os.remove(output_mp3)
 
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'ba/b',
         'outtmpl': output_filename,
-        'download_ranges': yt_dlp.utils.download_range_func(None, [(start_sec, end_sec)]),
         'force_overwrites': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192',
+            'preferredquality': '128',
         }],
         'quiet': True,
         'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -112,7 +152,7 @@ def summarize_sermon_gemini(transcript_text, api_key):
     )
     return response.text
 
-# Streamlit UI 구성
+# Streamlit UI
 video_url = st.text_input("유튜브 영상 URL", "https://www.youtube.com/watch?v=...")
 col1, col2 = st.columns(2)
 with col1:
@@ -124,15 +164,26 @@ if st.button("🚀 처리 시작하기"):
     if not GEMINI_API_KEY:
         st.error("Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
     else:
-        with st.spinner("1단계: 영상 오디오 추출 중..."):
-            audio_file = download_and_cut_video(video_url, start_time, end_time)
+        start_sec = time_to_seconds(start_time)
+        end_sec = time_to_seconds(end_time) if end_time != "00:00" else 999999
         
-        with st.spinner("2단계: Whisper로 대본 추출 중..."):
-            transcript = transcribe_audio(audio_file)
-            st.subheader("📝 추출된 대본")
-            st.text_area("전체 대본", transcript, height=200)
+        transcript = None
+        with st.spinner("1단계: 유튜브 대본/자막 추출 중..."):
+            try:
+                transcript = get_youtube_transcript(video_url, start_sec, end_sec)
+            except Exception as e:
+                pass
             
-        with st.spinner("3단계: Gemini AI 요약 보고서 생성 중..."):
+            # 자막 추출 실패 시 오디오 직접 추출 및 Whisper 실행
+            if not transcript:
+                st.info("공식/자동 자막이 없어 오디오 분석(Whisper)으로 전환합니다.")
+                audio_file = download_audio_fallback(video_url)
+                transcript = transcribe_audio(audio_file)
+        
+        st.subheader("📝 추출된 대본")
+        st.text_area("전체 대본", transcript, height=200)
+            
+        with st.spinner("2단계: Gemini AI 요약 보고서 생성 중..."):
             summary = summarize_sermon_gemini(transcript, GEMINI_API_KEY)
             st.subheader("💡 AI 설교 요약 보고서")
             st.markdown(summary)
