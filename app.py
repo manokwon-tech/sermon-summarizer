@@ -147,7 +147,7 @@ def summarize_sermon_gemini(transcript_text, api_key):
 3. 세상 조건에 흔들리지 않고 십자가 예수 그리스도 안에서 진정한 기쁨과 충만함을 누리게 하소서.
 """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-2.0-flash',
         contents=prompt,
     )
     return response.text
