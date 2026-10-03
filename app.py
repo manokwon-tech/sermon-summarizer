@@ -28,7 +28,7 @@ def time_to_seconds(t_str):
     except:
         return 0
 
-# 1단계: 유튜브 자막/대본 우선 추출 시도 (속도 및 성공률 최우선)
+# 1단계: 유튜브 자막/대본 우선 추출 시도
 def get_youtube_transcript(url, start_sec, end_sec):
     ydl_opts = {
         'skip_download': True,
@@ -107,7 +107,7 @@ def transcribe_audio(filename):
         
     return transcript_text
 
-# 4단계: Gemini 모델을 이용한 설교 요약 보고서 생성
+# 4단계: 동적 모델 감지 적용 Gemini 요약 함수
 def summarize_sermon_gemini(transcript_text, api_key):
     clean_key = api_key.strip()
     client = genai.Client(api_key=clean_key)
@@ -128,23 +128,30 @@ def summarize_sermon_gemini(transcript_text, api_key):
 3. 💡 **상세 설교 대지** (서론, 본론, 결론 구분 및 예화/인물/핵심 메시지 포함)
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
-    # 우선 순위 모델 목록
-    candidate_models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'models/gemini-1.5-flash']
-    
-    last_exception = None
-    for model_name in candidate_models:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-            return response.text
-        except Exception as e:
-            last_exception = e
-            continue
-            
-    st.error(f"Gemini API 호출 중 오류 발생: {str(last_exception)}")
-    return None
+    # 사용 가능한 모델 목록에서 'flash' 모델 자동 탐색
+    selected_model = None
+    try:
+        models_list = list(client.models.list())
+        for m in models_list:
+            if 'flash' in m.name.lower():
+                selected_model = m.name
+                break
+    except Exception:
+        pass
+
+    # 목록 조회 실패 시 하드코딩된 기본 풀네임 사용
+    if not selected_model:
+        selected_model = "models/gemini-1.5-flash"
+
+    try:
+        response = client.models.generate_content(
+            model=selected_model,
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        st.error(f"Gemini API 호출 중 오류 발생 ({selected_model}): {str(e)}")
+        return None
 
 # Streamlit UI 구성
 raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
