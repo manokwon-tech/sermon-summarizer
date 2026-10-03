@@ -15,7 +15,6 @@ st.write("유튜브 설교 영상 링크를 입력하시면 대본 추출 후 �
 
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
-# 시간(hh:mm:ss 또는 mm:ss)을 초 단위로 변환
 def time_to_seconds(t_str):
     try:
         parts = list(map(int, t_str.split(':')))
@@ -27,7 +26,6 @@ def time_to_seconds(t_str):
     except:
         return 0
 
-# 1. 유튜브 자막 우선 추출 시도 (가장 빠르고 실패율 0%)
 def get_youtube_transcript(url, start_sec, end_sec):
     ydl_opts = {
         'skip_download': True,
@@ -44,7 +42,6 @@ def get_youtube_transcript(url, start_sec, end_sec):
         if not subtitles:
             return None
         
-        # 한국어 자막선택, 없으면 첫번째 자막
         sub_lang = 'ko' if 'ko' in subtitles else list(subtitles.keys())[0]
         sub_url = next((item['url'] for item in subtitles[sub_lang] if item.get('ext') == 'json3'), None)
         
@@ -67,7 +64,6 @@ def get_youtube_transcript(url, start_sec, end_sec):
                         transcript_text += f"{time_str} {text}\n"
         return transcript_text if transcript_text.strip() else None
 
-# 2. 자막이 없을 경우 오디오 다운로드 후 Whisper 처리
 def download_audio_fallback(url, output_filename="audio_temp"):
     output_mp3 = f"{output_filename}.mp3"
     if os.path.exists(output_mp3):
@@ -107,7 +103,6 @@ def transcribe_audio(filename):
     return transcript_text
 
 def summarize_sermon_gemini(transcript_text, api_key):
-    # API 키의 공백 제거
     clean_key = api_key.strip()
     client = genai.Client(api_key=clean_key)
     
@@ -134,12 +129,11 @@ def summarize_sermon_gemini(transcript_text, api_key):
         )
         return response.text
     except Exception as e:
-        # ClientError의 원인을 화면에 직접 출력
         st.error(f"Gemini API 호출 중 오류 발생: {str(e)}")
         return None
 
 # Streamlit UI
-video_url = st.text_input("유튜브 영상 URL", "https://www.youtube.com/watch?v=...")
+raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
 col1, col2 = st.columns(2)
 with col1:
     start_time = st.text_input("시작 시간 (hh:mm:ss 또는 mm:ss)", "00:00")
@@ -147,7 +141,10 @@ with col2:
     end_time = st.text_input("종료 시간 (hh:mm:ss 또는 mm:ss)", "10:00")
 
 if st.button("🚀 처리 시작하기"):
-    if not GEMINI_API_KEY:
+    video_url = raw_url.strip()
+    if not video_url or "youtube.com" not in video_url and "youtu.be" not in video_url:
+        st.warning("올바른 유튜브 영상 URL을 입력해 주세요.")
+    elif not GEMINI_API_KEY:
         st.error("Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
     else:
         start_sec = time_to_seconds(start_time)
@@ -157,10 +154,9 @@ if st.button("🚀 처리 시작하기"):
         with st.spinner("1단계: 유튜브 대본/자막 추출 중..."):
             try:
                 transcript = get_youtube_transcript(video_url, start_sec, end_sec)
-            except Exception as e:
+            except Exception:
                 pass
             
-            # 자막 추출 실패 시 오디오 직접 추출 및 Whisper 실행
             if not transcript:
                 st.info("공식/자동 자막이 없어 오디오 분석(Whisper)으로 전환합니다.")
                 audio_file = download_audio_fallback(video_url)
@@ -171,5 +167,6 @@ if st.button("🚀 처리 시작하기"):
             
         with st.spinner("2단계: Gemini AI 요약 보고서 생성 중..."):
             summary = summarize_sermon_gemini(transcript, GEMINI_API_KEY)
-            st.subheader("💡 AI 설교 요약 보고서")
-            st.markdown(summary)
+            if summary:
+                st.subheader("💡 AI 설교 요약 보고서")
+                st.markdown(summary)
