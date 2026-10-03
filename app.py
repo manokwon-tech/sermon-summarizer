@@ -107,7 +107,9 @@ def transcribe_audio(filename):
     return transcript_text
 
 def summarize_sermon_gemini(transcript_text, api_key):
-    client = genai.Client(api_key=api_key)
+    # API 키의 공백 제거
+    clean_key = api_key.strip()
+    client = genai.Client(api_key=clean_key)
     
     prompt = f"""
 다음은 설교 영상의 대본입니다:
@@ -125,12 +127,16 @@ def summarize_sermon_gemini(transcript_text, api_key):
 3. 💡 **상세 설교 대지** (서론, 본론, 결론 구분 및 예화/인물/핵심 메시지 포함)
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
-    # 안정성이 검증된 gemini-1.5-flash 모델 사용
-    response = client.models.generate_content(
-        model='gemini-1.5-flash',
-        contents=prompt,
-    )
-    return response.text
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        # ClientError의 원인을 화면에 직접 출력
+        st.error(f"Gemini API 호출 중 오류 발생: {str(e)}")
+        return None
 
 # Streamlit UI
 video_url = st.text_input("유튜브 영상 URL", "https://www.youtube.com/watch?v=...")
