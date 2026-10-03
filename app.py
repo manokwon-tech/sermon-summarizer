@@ -6,6 +6,7 @@ import whisper
 import yt_dlp
 from google import genai
 
+# SSL 인증서 관련 오류 방지
 ssl._create_default_https_context = ssl._create_unverified_context
 
 st.set_page_config(page_title="AI 설교 요약 보고서", page_icon="📖", layout="wide")
@@ -13,6 +14,7 @@ st.set_page_config(page_title="AI 설교 요약 보고서", page_icon="📖", la
 st.title("📖 AI 설교 요약 보고서 시스템")
 st.write("유튜브 설교 영상 링크를 입력하시면 대본 추출 후 상세한 요약 보고서를 생성합니다.")
 
+# Streamlit Secrets에서 API Key 가져오기
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
 def time_to_seconds(t_str):
@@ -26,6 +28,7 @@ def time_to_seconds(t_str):
     except:
         return 0
 
+# 1단계: 유튜브 자막/대본 우선 추출 시도 (속도 및 성공률 최우선)
 def get_youtube_transcript(url, start_sec, end_sec):
     ydl_opts = {
         'skip_download': True,
@@ -64,6 +67,7 @@ def get_youtube_transcript(url, start_sec, end_sec):
                         transcript_text += f"{time_str} {text}\n"
         return transcript_text if transcript_text.strip() else None
 
+# 2단계: 자막 없을 시 오디오 직접 다운로드
 def download_audio_fallback(url, output_filename="audio_temp"):
     output_mp3 = f"{output_filename}.mp3"
     if os.path.exists(output_mp3):
@@ -88,6 +92,7 @@ def download_audio_fallback(url, output_filename="audio_temp"):
 
     return output_mp3
 
+# 3단계: Whisper 모델을 통한 음성 텍스트 변환
 def transcribe_audio(filename):
     model = whisper.load_model("base")
     result = model.transcribe(filename, fp16=False)
@@ -102,6 +107,7 @@ def transcribe_audio(filename):
         
     return transcript_text
 
+# 4단계: Gemini 모델을 이용한 설교 요약 보고서 생성
 def summarize_sermon_gemini(transcript_text, api_key):
     clean_key = api_key.strip()
     client = genai.Client(api_key=clean_key)
@@ -123,8 +129,9 @@ def summarize_sermon_gemini(transcript_text, api_key):
 4. 🙏 **적용 및 묵상 기도 제목** (3가지)
 """
     try:
+        # 최신 권장 모델인 gemini-2.0-flash 사용
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt,
         )
         return response.text
@@ -132,7 +139,7 @@ def summarize_sermon_gemini(transcript_text, api_key):
         st.error(f"Gemini API 호출 중 오류 발생: {str(e)}")
         return None
 
-# Streamlit UI
+# Streamlit UI 구성
 raw_url = st.text_input("유튜브 영상 URL", placeholder="https://www.youtube.com/watch?v=...")
 col1, col2 = st.columns(2)
 with col1:
@@ -142,7 +149,7 @@ with col2:
 
 if st.button("🚀 처리 시작하기"):
     video_url = raw_url.strip()
-    if not video_url or "youtube.com" not in video_url and "youtu.be" not in video_url:
+    if not video_url or ("youtube.com" not in video_url and "youtu.be" not in video_url):
         st.warning("올바른 유튜브 영상 URL을 입력해 주세요.")
     elif not GEMINI_API_KEY:
         st.error("Streamlit Secrets에 GEMINI_API_KEY가 설정되지 않았습니다.")
